@@ -1,20 +1,29 @@
 import os
 import time
 
-GAME_TITLE = "TYPING GAME ALPHA"
-MAX_NAME_LENGTH = 10
+GAME_TITLE = "TYPING GAME ALPHA"    # change this to your own title/theme
+MAX_NAME_LENGTH = 10                # our own choice, not in the spec
+
+# colors (ANSI codes)
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+CYAN = "\033[96m"
+RESET = "\033[0m"
+
+LEADERBOARD_FILE = "leaderboard.txt"
+LEADERBOARD_SIZE = 10
 
 
 # ---------- Step 1: loading words ----------
 def load_words(filename):
     words = []
     if not os.path.exists(filename):
-        return words
+        return words                      # missing file -> empty list, no crash
 
     file = open(filename, "r")
     for line in file:
-        word = line.strip()
-        if word != "":
+        word = line.strip()               # remove newline and spaces
+        if word != "":                    # skip blank lines
             words.append(word)
     file.close()
     return words
@@ -22,9 +31,9 @@ def load_words(filename):
 
 # ---------- Step 2: screen and input helpers ----------
 def clear_screen():
-    if os.name == "nt":
+    if os.name == "nt":                   # Windows
         os.system("cls")
-    else:
+    else:                                 # Mac / Linux
         os.system("clear")
 
 def show_title():
@@ -54,60 +63,81 @@ def ask_player_name():
 
 # ---------- Step 3: picking random words ----------
 def random_number(limit):
+    # random whole number from 0 to limit - 1 (uses only the os library)
     return int.from_bytes(os.urandom(4), "big") % limit
 
 def shuffle_list(items):
+    # Fisher-Yates shuffle
     for i in range(len(items) - 1, 0, -1):
         j = random_number(i + 1)
         items[i], items[j] = items[j], items[i]
 
 def pick_words(words, count):
-    copy = words[:]
+    copy = words[:]                       # copy so the original isn't changed
     shuffle_list(copy)
-    return copy[:count]
+    return copy[:count]                   # first 'count' items = no duplicates
 
 def build_round():
     round_words = []
     for filename in ["words3.txt", "words4.txt", "words5.txt"]:
         words = load_words(filename)
-        if len(words) < 7:
+        if len(words) < 7:                # not enough words -> tell the caller
             return []
         for word in pick_words(words, 7):
             round_words.append(word)
-    shuffle_list(round_words)
+    shuffle_list(round_words)             # mix 3, 4 and 5-letter words together
     return round_words
 
-# ---------- Step 4: playing the game ----------
+
+# ---------- Step 4 + 8: playing the game ----------
 def word_points(word):
     if len(word) == 3:
         return 2
     if len(word) == 4:
         return 5
-    return 7                      # 5-letter words
+    return 7                              # 5-letter words
+
+def countdown():
+    for number in [3, 2, 1]:
+        clear_screen()
+        print(YELLOW + "Starting in " + str(number) + "..." + RESET)
+        time.sleep(1)
 
 def play_game(round_words):
     score = 0
-    mistyped = []                 # will hold [actual, typed] pairs
+    mistyped = []                         # holds [actual, typed] pairs
+    streak = 0
+    best_streak = 0
 
     clear_screen()
     input("Ready? Press enter to start...")
+    countdown()                           # runs BEFORE the timer starts
 
-    start_time = time.time()      # the timer starts here
+    start_time = time.time()              # the timer starts here
+    number = 0
     for word in round_words:
+        number = number + 1
         clear_screen()
+        print("Word " + str(number) + "/" + str(len(round_words))
+              + "   Streak: " + str(streak))
         print("TYPE THE WORD BELOW THEN PRESS ENTER")
         print("=" * 20)
-        print(word)
+        print(CYAN + word + RESET)
         print()
         typed = input("").strip()
 
         if typed == word:
             score = score + word_points(word)
+            streak = streak + 1
+            if streak > best_streak:
+                best_streak = streak
         else:
             mistyped.append([word, typed])
+            streak = 0
 
     elapsed = round(time.time() - start_time, 2)
-    return score, elapsed, mistyped
+    return score, elapsed, mistyped, best_streak
+
 
 # ---------- Step 5: misspelled words screen ----------
 def show_misspelled(mistyped):
@@ -129,11 +159,10 @@ def show_misspelled(mistyped):
     print("*" * 30)
     input("Press enter to continue...")
 
-# ---------- Step 6: leaderboard ----------
-LEADERBOARD_FILE = "leaderboard.txt"
-LEADERBOARD_SIZE = 10
 
+# ---------- Step 6: leaderboard ----------
 # each entry is a list: [name, time, score]
+# the file stores each entry as one line:  score|time|name
 
 def split_line(line, separator):
     # our own split, so we don't depend on a built-in parser
@@ -236,10 +265,20 @@ def show_leaderboard(entries):
         else:
             print(rank.ljust(8) + "---")
 
-# ---------- Step 7: main menu ----------
-def show_results(score, elapsed):
-    print("Your score:", score, "out of 98")
-    print("Your time:", elapsed, "seconds")
+
+# ---------- Step 7 + 8: results and main menu ----------
+def show_results(score, elapsed, mistyped, best_streak, total):
+    correct = total - len(mistyped)
+    accuracy = round(correct * 100 / total, 1)
+    wpm = 0
+    if elapsed > 0:
+        wpm = round(correct * 60 / elapsed, 1)
+
+    print(GREEN + "Your score: " + str(score) + " out of 98" + RESET)
+    print("Your time: " + str(elapsed) + " seconds")
+    print("Accuracy: " + str(accuracy) + "%")
+    print("Words per minute: " + str(wpm))
+    print("Best streak: " + str(best_streak))
     print()
 
 def start_game(entries):
@@ -250,16 +289,16 @@ def start_game(entries):
         input("Press enter to go back...")
         return entries
 
-    score, elapsed, mistyped = play_game(round_words)
+    score, elapsed, mistyped, best_streak = play_game(round_words)
     show_misspelled(mistyped)
 
     clear_screen()
-    show_results(score, elapsed)
+    show_results(score, elapsed, mistyped, best_streak, len(round_words))
     if score > 0 and qualifies(entries, score, elapsed):
         print("You made the leaderboard!")
         name = ask_player_name()
         entries = add_entry(entries, name, elapsed, score)
-        save_leaderboard(entries)
+        save_leaderboard(entries)         # saved only when it changed
     else:
         print("Not on the leaderboard this time.")
     print()
@@ -268,6 +307,8 @@ def start_game(entries):
     return entries
 
 def main():
+    if os.name == "nt":
+        os.system("")                     # lets older Windows terminals show colors
     entries = load_leaderboard()          # loaded once, when the program launches
     while True:
         clear_screen()
